@@ -1,0 +1,5 @@
+services:
+  - type: web
+    name: flask-docker-app
+    env: docker
+    plan: free
