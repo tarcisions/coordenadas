@@ -1,0 +1,269 @@
+{% extends "base.html" %}
+
+{% block title %}{{ document.original_filename }} - Visualizador PDF{% endblock %}
+
+{% block head %}
+<style>
+    #pdf-container {
+        position: relative;
+        display: inline-block;
+        border: 2px solid var(--bs-border-color);
+        background: white;
+    }
+    
+    #pdf-canvas {
+        display: block;
+        cursor: crosshair;
+    }
+    
+    .coordinate-marker {
+        position: absolute;
+        width: 12px;
+        height: 12px;
+        background: rgba(255, 0, 0, 0.8);
+        border: 2px solid white;
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+        z-index: 10;
+    }
+    
+    .area-marker {
+        position: absolute;
+        border: 2px solid rgba(0, 255, 0, 0.8);
+        background-color: rgba(0, 255, 0, 0.1);
+        pointer-events: none;
+        z-index: 5;
+        animation: area-pulse 2s infinite;
+    }
+    
+    @keyframes area-pulse {
+        0% {
+            border-color: rgba(0, 255, 0, 0.8);
+            background-color: rgba(0, 255, 0, 0.1);
+        }
+        50% {
+            border-color: rgba(0, 255, 0, 1);
+            background-color: rgba(0, 255, 0, 0.2);
+        }
+        100% {
+            border-color: rgba(0, 255, 0, 0.8);
+            background-color: rgba(0, 255, 0, 0.1);
+        }
+    }
+    
+    .coordinate-info {
+        max-height: 400px;
+        overflow-y: auto;
+    }
+    
+    .zoom-controls {
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        background: var(--bs-body-bg);
+        border-bottom: 1px solid var(--bs-border-color);
+        padding: 1rem 0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h3 class="mb-1">
+                <i class="fas fa-file-pdf text-danger me-2"></i>
+                {{ document.original_filename }}
+            </h3>
+            <small class="text-muted">
+                {{ document.page_count }} páginas | Dimensões originais: {{ "%.0f"|format(document.original_width) }} × {{ "%.0f"|format(document.original_height) }} pts
+            </small>
+        </div>
+        <a href="{{ url_for('index') }}" class="btn btn-secondary">
+            <i class="fas fa-arrow-left me-2"></i>
+            Voltar
+        </a>
+    </div>
+    
+    <div class="row">
+        <!-- PDF Viewer -->
+        <div class="col-lg-8">
+            <!-- Controls -->
+            <div class="zoom-controls">
+                <div class="row align-items-center">
+                    <div class="col-md-6">
+                        <div class="d-flex align-items-center gap-3">
+                            <label class="form-label mb-0">Página:</label>
+                            <div class="input-group" style="width: 150px;">
+                                <button class="btn btn-outline-secondary" type="button" id="prev-page">
+                                    <i class="fas fa-chevron-left"></i>
+                                </button>
+                                <input type="number" class="form-control text-center" id="current-page" 
+                                       value="1" min="1" max="{{ document.page_count }}">
+                                <button class="btn btn-outline-secondary" type="button" id="next-page">
+                                    <i class="fas fa-chevron-right"></i>
+                                </button>
+                            </div>
+                            <span class="text-muted">de {{ document.page_count }}</span>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="d-flex align-items-center gap-3">
+                            <label class="form-label mb-0">Zoom:</label>
+                            <div class="input-group" style="width: 200px;">
+                                <button class="btn btn-outline-secondary" type="button" id="zoom-out">
+                                    <i class="fas fa-search-minus"></i>
+                                </button>
+                                <input type="range" class="form-control" id="zoom-slider" 
+                                       min="0.25" max="3" step="0.25" value="1">
+                                <button class="btn btn-outline-secondary" type="button" id="zoom-in">
+                                    <i class="fas fa-search-plus"></i>
+                                </button>
+                            </div>
+                            <span id="zoom-display" class="text-muted">100%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- PDF Display -->
+            <div class="text-center" style="overflow: auto; max-height: 80vh;">
+                <div id="pdf-container">
+                    <canvas id="pdf-canvas"></canvas>
+                    <!-- Coordinate markers will be added here dynamically -->
+                </div>
+            </div>
+            
+            <!-- Current Coordinates Display -->
+            <div class="mt-3 p-3 bg-dark border rounded">
+                <h6 class="text-primary mb-2">
+                    <i class="fas fa-crosshairs me-2"></i>
+                    Coordenadas em Tempo Real
+                </h6>
+                <div class="row text-center">
+                    <div class="col-3">
+                        <div class="border rounded p-2">
+                            <div class="h6 mb-0" id="mouse-x">-</div>
+                            <small class="text-muted">X (Tela)</small>
+                        </div>
+                    </div>
+                    <div class="col-3">
+                        <div class="border rounded p-2">
+                            <div class="h6 mb-0" id="mouse-y">-</div>
+                            <small class="text-muted">Y (Tela)</small>
+                        </div>
+                    </div>
+                    <div class="col-3">
+                        <div class="border rounded p-2 border-primary">
+                            <div class="h6 mb-0 text-primary" id="pdf-x">-</div>
+                            <small class="text-primary">X (PDF)</small>
+                        </div>
+                    </div>
+                    <div class="col-3">
+                        <div class="border rounded p-2 border-primary">
+                            <div class="h6 mb-0 text-primary" id="pdf-y">-</div>
+                            <small class="text-primary">Y (PDF)</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Coordinates Panel -->
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-map-pin me-2"></i>
+                        Coordenadas Capturadas
+                    </h5>
+                </div>
+                <div class="card-body coordinate-info">
+                    <div id="coordinates-list">
+                        <div class="text-center text-muted py-4">
+                            <i class="fas fa-mouse-pointer" style="font-size: 2rem;"></i>
+                            <p class="mt-2">Clique para capturar pontos ou arraste para selecionar áreas</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <button class="btn btn-outline-danger btn-sm w-100" id="clear-coordinates">
+                        <i class="fas fa-trash me-2"></i>
+                        Limpar Todas
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Calibration Info -->
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h6 class="card-title mb-0">
+                        <i class="fas fa-cog me-2"></i>
+                        Informações de Calibração
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col-6">
+                            <div class="border rounded p-2">
+                                <div class="small mb-0" id="scale-factor">-</div>
+                                <small class="text-muted">Escala</small>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="border rounded p-2">
+                                <div class="small mb-0" id="dpi-info">-</div>
+                                <small class="text-muted">DPI</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Coordinate Description Modal -->
+<div class="modal fade" id="coordinateModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Descrição da Coordenada</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <strong>Coordenadas PDF:</strong>
+                    <span id="modal-coordinates"></span>
+                </div>
+                <div class="mb-3">
+                    <label for="coordinate-description" class="form-label">Descrição (opcional):</label>
+                    <input type="text" class="form-control" id="coordinate-description" 
+                           placeholder="Ex: Logo da empresa, assinatura, etc.">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="save-coordinate">Salvar</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/pdf-viewer.js') }}"></script>
+<script>
+    // Initialize PDF viewer
+    const pdfViewer = new PDFViewer({
+        documentId: {{ document.id }},
+        totalPages: {{ document.page_count }},
+        originalWidth: {{ document.original_width }},
+        originalHeight: {{ document.original_height }}
+    });
+    
+    pdfViewer.init();
+</script>
+{% endblock %}
