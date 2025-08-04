@@ -1,12 +1,14 @@
-# Imagem base oficial com Python
 FROM python:3.11-slim
 
-# Evita prompt durante instalação de pacotes
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Instala dependências de sistema (necessárias para Pillow, PyMuPDF etc.)
+# Instala dependências do sistema
 RUN apt-get update && apt-get install -y \
-    build-essential \
+    xfce4 \
+    tightvncserver \
+    dbus-x11 \
+    x11-xserver-utils \
+    supervisor \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
@@ -16,23 +18,30 @@ RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     ghostscript \
     curl \
+    build-essential \
     && apt-get clean
 
-# Cria diretório de trabalho
+# Cria usuário padrão
+RUN useradd -m user
+RUN echo "user:password" | chpasswd
+
+# Define diretório de trabalho
 WORKDIR /app
 
 # Copia dependências
 COPY requirements.txt .
-
-# Instala dependências Python
 RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copia o restante do app
 COPY . .
 
-# Define porta
-EXPOSE 5000
+# Expondo Flask (5000) e VNC (5901)
+EXPOSE 5000 5901
 
-# Comando de inicialização (ajuste conforme seu app)
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "app:app"]
+# Script de inicialização do VNC
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Comando de inicialização
+CMD ["/entrypoint.sh"]
