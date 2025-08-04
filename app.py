@@ -41,7 +41,7 @@ with app.app_context():
     # Import models to ensure tables are created
     import models
     # Drop and recreate all tables to handle schema changes
-    db.drop_all()
+    # db.drop_all()
     db.create_all()
 
 # Import routes
