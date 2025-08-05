@@ -2,9 +2,9 @@ FROM python:3.11-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Instala dependências do sistema
 RUN apt-get update && apt-get install -y \
     xfce4 \
-    xfce4-terminal \
     tightvncserver \
     dbus-x11 \
     x11-xserver-utils \
@@ -19,31 +19,29 @@ RUN apt-get update && apt-get install -y \
     ghostscript \
     curl \
     build-essential \
-    firefox-esr \
-    wget \
-    unzip \
     && apt-get clean
 
-# Instalar geckodriver
-RUN GECKO_VERSION=v0.33.0 && \
-    wget -q "https://github.com/mozilla/geckodriver/releases/download/$GECKO_VERSION/geckodriver-$GECKO_VERSION-linux64.tar.gz" && \
-    tar -xzf geckodriver-$GECKO_VERSION-linux64.tar.gz -C /usr/local/bin/ && \
-    rm geckodriver-$GECKO_VERSION-linux64.tar.gz
+# Cria usuário padrão
+RUN useradd -m user
+RUN echo "user:password" | chpasswd
 
-# Criar usuário não root para rodar o ambiente gráfico
-RUN useradd -m user && echo "user:password" | chpasswd
-
+# Define diretório de trabalho
 WORKDIR /app
 
+# Copia dependências
 COPY requirements.txt .
 RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copia o restante do app
 COPY . .
 
+# Expondo Flask (5000) e VNC (5901)
 EXPOSE 5000 5901
 
+# Script de inicialização do VNC
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+# Comando de inicialização
 CMD ["/entrypoint.sh"]
